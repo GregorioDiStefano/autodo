@@ -1,0 +1,13 @@
+{
+	"name": "greg",
+	"action": {
+		"script": {
+			"file": "greg.sh",
+			"schedule": "@every 120s"
+		}
+	},
+	"notifier": [{
+		"type": "slack",
+		"text": "test"
+	}]
+}

@@ -1,0 +1,17 @@
+{
+	"name": "greg-wh",
+	"action": {
+		"webhook": {
+            "webhook_id": "a",
+            "show_stdout": true
+		},
+        "script": {
+            "file": "autodo",
+            "timeout": 1
+        }
+	},
+	"notifier": [{
+		"type": "slack",
+		"text": "test"
+	}]
+}
