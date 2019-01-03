@@ -9,7 +9,9 @@ type TaskHistory struct {
 	gorm.Model
 	Run           uint
 	TaskName      string
-	ExecutionTime int
+	ExecutionTime int64
+	ExitCode      int
+	Output        string
 }
 
 var db *gorm.DB
@@ -25,9 +27,26 @@ func Setup() {
 	db.AutoMigrate(&TaskHistory{})
 }
 
-func Add_entry() {
+func AddTaskHistoryEntry(taskName string, run uint, executionTime int64, output string, exitCode int) {
 	db.Create(&TaskHistory{
-		Run:           1212,
-		TaskName:      "1000",
-		ExecutionTime: 12})
+		Run:           run,
+		TaskName:      taskName,
+		ExecutionTime: executionTime,
+		Output:        output,
+		ExitCode:      exitCode})
+}
+
+func GetTaskHistory(taskName string) int {
+	var taskHistory []TaskHistory
+	db.Where("task_name = ?", taskName).Find(&taskHistory)
+
+	largestRunNumber := uint(0)
+	for _, run := range taskHistory {
+		if run.Run > largestRunNumber {
+			largestRunNumber = run.Run
+		}
+
+	}
+
+	return int(largestRunNumber)
 }

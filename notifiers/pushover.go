@@ -12,9 +12,9 @@ func SendMessage(msg string) {
 
 	message := pushover.NewMessage(msg)
 
-	resp, err := app.SendMessage(message, recipient)
+	_, err := app.SendMessage(message, recipient)
 	if err != nil {
 		log.Panic(err)
 	}
-	log.Print(resp)
+
 }

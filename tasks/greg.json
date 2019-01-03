@@ -3,11 +3,11 @@
 	"action": {
 		"script": {
 			"file": "greg.sh",
-			"schedule": "@every 120s"
+			"schedule": "@every 200s"
 		}
 	},
 	"notifier": [{
-		"type": "slack",
+		"type": "pushover",
 		"text": "test"
 	}]
 }

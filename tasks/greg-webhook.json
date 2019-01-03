@@ -6,12 +6,12 @@
             "show_stdout": true
 		},
         "script": {
-            "file": "autodo",
-            "timeout": 1
+            "file": "greg.sh",
+            "timeout": 2
         }
 	},
 	"notifier": [{
-		"type": "slack",
-		"text": "test"
+		"type": "pushover",
+		"text": "Got: %stdout%"
 	}]
 }

@@ -1,0 +1,14 @@
+{
+	"name": "nm",
+	"action": {
+		"script": {
+			"file": "nm.sh",
+			"schedule": "@every 10s"
+		}
+	},
+	"notifier": [{
+		"type": "pushover",
+		"text": "%stdout%",
+        "on-success": true
+	}]
+}

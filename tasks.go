@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/GregorioDiStefano/autodo/notifiers"
+	"github.com/GregorioDiStefano/autodo/store"
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron"
 	log "github.com/sirupsen/logrus"
@@ -23,30 +24,9 @@ const (
 	MAX_WAIT_BEFORE_NOTIFICATIONS = 10
 )
 
-type Task struct {
-	Name   string `json:"name"`
-	Action struct {
-		Script struct {
-			File     string `json:"file"`
-			Schedule string `json:"schedule"`
-			Timeout  int    `json:"timeout"`
-		} `json:"script"`
-		Webhook struct {
-			WebhookID        string `json:"webhook_id"`
-			ShowScriptStdout bool   `json:"show_stdout"`
-		} `json:"webhook"`
-	} `json:"action"`
-	Notifier []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"notifier"`
-
-	//internally used
-	lastMessageSend time.Time
-}
-
 func runScript(task *Task, envVariables map[string]string) (string, error) {
 	log.WithField("task", task.Name).Debug("starting")
+	lastRun := db.GetTaskHistory(task.Name)
 
 	timeout := 0
 	if task.Action.Script.Timeout > 0 {
@@ -77,31 +57,46 @@ func runScript(task *Task, envVariables map[string]string) (string, error) {
 		log.WithField("task", task.Name).Fatalf("task failed to start: %s", err.Error())
 	}
 
-	if err := cmd.Wait(); err != nil {
+	startTime := time.Now().UnixNano()
+	err := cmd.Wait()
+	endTime := time.Now().UnixNano()
 
+	log.WithField("task", task.Name).Debugf("took %dms to run", (endTime-startTime)/1000000)
+
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			log.WithField("task", task.Name).Debugf("script timedout!")
+			db.AddTaskHistoryEntry(task.Name, uint(lastRun+1), (endTime-startTime)/1000000, out.String(), 9999)
+			log.WithField("task", task.Name).Infof("script time out!")
 			return "", context.DeadlineExceeded
 		}
 
 		log.Debug("task errored with: " + err.Error())
 		if exiterr, ok := err.(*exec.ExitError); ok {
-			task.maybeSendNotification(out.String())
-
 			if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-				log.Printf("Exit Status: %d", status.ExitStatus())
+				log.WithField("task", task.Name).Infof("script errored with: %s", out.String())
+				db.AddTaskHistoryEntry(task.Name, uint(lastRun+1), (endTime-startTime)/1000000, out.String(), status.ExitStatus())
+				task.maybeSendNotification(out.String())
+				return "", nil
 			}
 		} else {
 			log.Fatalf("cmd.Wait: %v", err)
 		}
 	}
 
+	for _, notifier := range task.Notifier {
+		if notifier.OnSuccess {
+			task.maybeSendNotification(out.String())
+		}
+	}
+
+	log.WithField("task", task.Name).Infof("script ran successfully output: %s", out.String())
+	db.AddTaskHistoryEntry(task.Name, uint(lastRun+1), (endTime-startTime)/1000000, out.String(), 0)
 	return out.String(), nil
 }
 
 func setupCronTask(task *Task) {
 	log.SetLevel(log.DebugLevel)
-	log.WithField("script", task.Action.Script.File).Debug("setting up cronjob")
+	log.WithField("task", task.Name).Debug("setting up cronjob")
 	c := cron.New()
 
 	j := cron.FuncJob(func() {
@@ -153,6 +148,14 @@ func setupWebhookRoute(tasks *[]Task, ge *gin.Engine) {
 func (t *Task) maybeSendNotification(msg string) {
 	if (t.lastMessageSend == time.Time{} || t.lastMessageSend.Unix() < time.Now().Unix()-MAX_WAIT_BEFORE_NOTIFICATIONS) {
 		t.lastMessageSend = time.Now()
-		pushover_notify.SendMessage(msg)
+		for _, notifier := range t.Notifier {
+			switch notifier.Type {
+			case "pushover":
+				msgToSend := strings.Replace(notifier.Text, "%stdout%", msg, 1)
+				pushover_notify.SendMessage(msgToSend)
+			default:
+				log.WithField("notifier", notifier.Type).Warn("unknown notification type")
+			}
+		}
 	}
 }

@@ -7,7 +7,7 @@
 		}
 	},
 	"notifier": [{
-		"type": "slack",
+		"type": "pushover",
 		"text": "test"
 	}]
 }

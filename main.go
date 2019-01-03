@@ -14,9 +14,7 @@ import (
 
 func main() {
 	log.SetLevel(log.DebugLevel)
-
 	db.Setup()
-	db.Add_entry()
 
 	files, err := ioutil.ReadDir("./tasks")
 
