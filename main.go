@@ -5,11 +5,14 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/GregorioDiStefano/autodo/store"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	LISTEN_ADDRESS = "0.0.0.0:8000"
 )
 
 func main() {
@@ -45,22 +48,25 @@ func main() {
 	}
 
 	verifyTasks(tasks)
-
 	gin.SetMode(gin.ReleaseMode)
-	ge := gin.Default()
+	webhookTasks := []Task{}
 
-	for idx, _ := range tasks {
-		if tasks[idx].Action.Script.Schedule != "" {
-			go setupCronTask(&tasks[idx])
+	for idx, task := range tasks {
+		if task.Action.Script.Schedule != "" {
+			t := &tasks[idx]
+			go t.setupCronTask()
+		} else {
+			webhookTasks = append(webhookTasks, tasks[idx])
 		}
 	}
 
-	setupWebhookRoute(&tasks, ge)
-
-	ge.Run(":8000")
-	for {
-		time.Sleep(1 * time.Second)
+	ge := gin.Default()
+	for _, task := range webhookTasks {
+		task.setupWebhookRoute(ge)
 	}
+
+	log.WithField("webhook url", "http://"+LISTEN_ADDRESS+"/webhook/<id>").Debug("listening for webhooks")
+	ge.Run(LISTEN_ADDRESS)
 }
 
 func verifyTasks(tasks []Task) {

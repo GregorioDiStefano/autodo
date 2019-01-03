@@ -24,7 +24,7 @@ const (
 	MAX_WAIT_BEFORE_NOTIFICATIONS = 10
 )
 
-func runScript(task *Task, envVariables map[string]string) (string, error) {
+func (task *Task) runTaskScript(envVariables map[string]string) (string, error) {
 	log.WithField("task", task.Name).Debug("starting")
 	lastRun := db.GetTaskHistory(task.Name)
 
@@ -94,54 +94,52 @@ func runScript(task *Task, envVariables map[string]string) (string, error) {
 	return out.String(), nil
 }
 
-func setupCronTask(task *Task) {
+func (task *Task) setupCronTask() {
 	log.SetLevel(log.DebugLevel)
 	log.WithField("task", task.Name).Debug("setting up cronjob")
 	c := cron.New()
 
 	j := cron.FuncJob(func() {
-		runScript(task, nil)
+		task.runTaskScript(nil)
 	})
 
 	c.AddJob(task.Action.Script.Schedule, j)
 	c.Start()
 }
 
-func setupWebhookRoute(tasks *[]Task, ge *gin.Engine) {
-	ge.POST("/webhook/:id", func(c *gin.Context) {
-		id := c.Param("id")
+func (task *Task) setupWebhookRoute(ge *gin.Engine) {
+	log.WithFields(log.Fields{"task": task.Name, "task_id": task.Action.Webhook.WebhookID}).Debug("setting up webhook")
+	taskID := task.Action.Webhook.WebhookID
 
-		for _, task := range *tasks {
-			if id == task.Action.Webhook.WebhookID {
-				response := make(map[string]string)
-				envVariables := make(map[string]string)
+	ge.POST("/webhook/"+taskID, func(c *gin.Context) {
+		response := make(map[string]string)
+		envVariables := make(map[string]string)
 
-				for k, v := range c.Request.URL.Query() {
-					envKey := strings.ToUpper(k)
-					envVariables[envKey] = v[0]
-				}
-
-				payload, _ := ioutil.ReadAll(c.Request.Body)
-				envVariables["JSON"] = base64.StdEncoding.EncodeToString(payload)
-
-				startTime := time.Now().UnixNano()
-				output, err := runScript(&task, envVariables)
-				endTime := time.Now().UnixNano()
-
-				response["runtime"] = strconv.FormatInt((endTime-startTime)/1000000, 10) + "ms"
-
-				if task.Action.Webhook.ShowScriptStdout {
-					response["stdout"] = output
-				}
-
-				if err != nil {
-					response["error"] = err.Error()
-				}
-
-				c.JSON(http.StatusOK, response)
-				return
-			}
+		for k, v := range c.Request.URL.Query() {
+			envKey := strings.ToUpper(k)
+			envVariables[envKey] = v[0]
 		}
+
+		payload, _ := ioutil.ReadAll(c.Request.Body)
+		envVariables["JSON"] = base64.StdEncoding.EncodeToString(payload)
+
+		startTime := time.Now().UnixNano()
+		output, err := task.runTaskScript(envVariables)
+		endTime := time.Now().UnixNano()
+
+		response["runtime"] = strconv.FormatInt((endTime-startTime)/1000000, 10) + "ms"
+
+		if task.Action.Webhook.ShowScriptStdout {
+			response["stdout"] = output
+		}
+
+		if err != nil {
+			response["error"] = err.Error()
+		}
+
+		c.JSON(http.StatusOK, response)
+		return
+
 	})
 }
 
