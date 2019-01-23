@@ -5,21 +5,23 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
-
-	"github.com/GregorioDiStefano/autodo/store"
+	"time"
+	"path/filepath"
+	db "github.com/GregorioDiStefano/autodo/store"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
 	LISTEN_ADDRESS = "0.0.0.0:8000"
+	TASK_DIR = "tasks"
 )
 
 func main() {
 	log.SetLevel(log.DebugLevel)
 	db.Setup()
 
-	files, err := ioutil.ReadDir("./tasks")
+	files, err := ioutil.ReadDir(TASK_DIR)
 
 	if err != nil {
 		log.Fatal(err)
@@ -29,7 +31,9 @@ func main() {
 	for _, f := range files {
 		if strings.HasSuffix(f.Name(), ".json") {
 			var t Task
-			data, err := ioutil.ReadFile("./tasks/" + f.Name())
+			data, err := ioutil.ReadFile(filepath.Join(TASK_DIR,f.Name()))
+			log.WithField("script", f.Name()).Debugf("loading script: %s", t.Name)
+
 
 			if err != nil {
 				panic(err)
@@ -41,18 +45,18 @@ func main() {
 				panic(err)
 			}
 
-			log.WithField("script", f.Name()).Debugf("loading script: %s", t.Name)
+
 			tasks = append(tasks, t)
 		}
 
 	}
 
 	verifyTasks(tasks)
-	gin.SetMode(gin.ReleaseMode)
 	webhookTasks := []Task{}
 
 	for idx, task := range tasks {
-		if task.Action.Script.Schedule != "" {
+		setTaskType(&tasks[idx])
+		if task.Schedule.Cron != "" {
 			t := &tasks[idx]
 			go t.setupCronTask()
 		} else {
@@ -61,11 +65,15 @@ func main() {
 	}
 
 	ge := gin.Default()
-	for _, task := range webhookTasks {
-		task.setupWebhookRoute(ge)
+	for idx, _ := range webhookTasks {
+		t := &webhookTasks[idx]
+		t.setupWebhookRoute(ge)
 	}
 
-	log.WithField("webhook url", "http://"+LISTEN_ADDRESS+"/webhook/<id>").Debug("listening for webhooks")
+	time.Sleep(1 * time.Second)
+	log.WithField("webhook url", "http://"+LISTEN_ADDRESS+"/webhook/<id>").Info("listening for webhooks")
+
+	gin.SetMode(gin.ReleaseMode)
 	ge.Run(LISTEN_ADDRESS)
 }
 
@@ -79,12 +87,23 @@ func verifyTasks(tasks []Task) {
 				log.Fatal("script with this name already exists")
 			}
 		}
-		taskNames = append(taskNames, task.Name)
 
-		if _, err := os.Stat("./tasks/" + task.Action.Script.File); err != nil {
+		taskNames = append(taskNames, task.Name)
+		if _, err := os.Stat(filepath.Join(TASK_DIR, task.Action.Script.File)); err != nil {
 			log.Fatalf("unable to stat script %s in %s", task.Action.Script.File, task.Name)
 		}
 
-	}
+		if task.Action.Container.Image != "" && task.Action.Script.File != "" {
+			log.WithField("task", task.Name).Debug("task can only have a container or script configured")
+		}
 
+	}
+}
+
+func setTaskType(task *Task) {
+	if task.Action.Container.Image != "" {
+		task.taskActionType = ContainerTask
+	} else if task.Action.Script.File != "" {
+		task.taskActionType = ScriptTask
+	}
 }

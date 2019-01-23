@@ -21,8 +21,9 @@ func Setup() {
 	db, err = gorm.Open("sqlite3", "tasks.db")
 
 	if err != nil {
-		panic("failed to connect database")
+		panic("failed to connect database: " + err.Error())
 	}
+
 	// Migrate the schema
 	db.AutoMigrate(&TaskHistory{})
 }
